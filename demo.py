@@ -37,6 +37,7 @@ class Hand(object):
             attention_mixture_components=10
         )
         # self.nn.restore()
+        self.nn.session.run(self.nn.init)
 
     def write(self, filename, lines, biases=None, styles=None, stroke_colors=None, stroke_widths=None):
         valid_char_set = set(drawing.alphabet)

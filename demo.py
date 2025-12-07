@@ -36,7 +36,7 @@ class Hand(object):
             output_mixture_components=20,
             attention_mixture_components=10
         )
-        self.nn.restore()
+        # self.nn.restore()
 
     def write(self, filename, lines, biases=None, styles=None, stroke_colors=None, stroke_widths=None):
         valid_char_set = set(drawing.alphabet)

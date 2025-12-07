@@ -15,7 +15,7 @@ LSTMAttentionCellState = namedtuple(
 )
 
 
-class LSTMAttentionCell(tf.keras.layers.AbstractRNNCell):
+class LSTMAttentionCell(tf.keras.layers.Layer):
     """
     Keras 3 / TF 2.16+ 호환 버전의 LSTMAttentionCell
     - tf.compat.v1.nn.rnn_cell.RNNCell 상속 → tf.keras.layers.AbstractRNNCell 상속

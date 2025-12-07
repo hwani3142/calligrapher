@@ -41,6 +41,7 @@ class LSTMAttentionCell(tf.keras.layers.Layer):
         # window_size 는 static shape를 사용하는 게 Keras state_size에 더 안전함
         self.window_size = shape(self.attention_values, 2)  # int
         self.char_len = shape(self.attention_values, 1)     # int (문자 길이)
+        self.batch_size = tf.shape(attention_values)[0]
         self.num_output_mixture_components = num_output_mixture_components
         self.output_units = 6 * self.num_output_mixture_components + 1
         self.bias = bias
@@ -186,6 +187,23 @@ class LSTMAttentionCell(tf.keras.layers.Layer):
         return s3_out, list(new_state)
 
     # ----- zero_state: 필요하면 직접 사용 (Keras RNN의 initial_state로도 사용 가능) -----
+    def zero_state(self, batch_size, dtype):
+        """원래 TF1 RNNCell 인터페이스를 맞추기 위한 helper.
+        rnn.sample / rnn.primed_sample / calculate_loss 에서 사용됨.
+        """
+        return LSTMAttentionCellState(
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # h1
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # c1
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # h2
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # c2
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # h3
+            tf.zeros([batch_size, self.lstm_size], dtype=dtype),  # c3
+            tf.zeros([batch_size, self.num_attn_mixture_components], dtype=dtype),  # alpha
+            tf.zeros([batch_size, self.num_attn_mixture_components], dtype=dtype),  # beta
+            tf.zeros([batch_size, self.num_attn_mixture_components], dtype=dtype),  # kappa
+            tf.zeros([batch_size, self.window_size], dtype=dtype),                  # w (window_size: int)
+            tf.zeros([batch_size, self.char_len], dtype=dtype),                     # phi (char_len: tensor)
+        )
 
     def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
         """

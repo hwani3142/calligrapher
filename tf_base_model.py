@@ -9,6 +9,9 @@ import time
 import numpy as np
 import tensorflow as tf
 
+# TensorFlow 2.x compatibility
+tf.compat.v1.disable_eager_execution()
+
 from tf_utils import shape
 
 
@@ -106,7 +109,7 @@ class TFBaseModel(object):
         logging.info('\nnew run with parameters:\n{}'.format(pp.pformat(self.__dict__)))
 
         self.graph = self.build_graph()
-        self.session = tf.Session(graph=self.graph)
+        self.session = tf.compat.v1.Session(graph=self.graph)
         logging.info('built graph')
 
     def update_train_params(self):

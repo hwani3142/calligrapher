@@ -40,7 +40,7 @@ class LSTMAttentionCell(tf.keras.layers.Layer):
         self.attention_values_lengths = attention_values_lengths  # [B]
         # window_size 는 static shape를 사용하는 게 Keras state_size에 더 안전함
         self.window_size = shape(self.attention_values, 2)  # int
-        self.char_len = shape(self.attention_values, 1)     # int (문자 길이)
+        self.char_len = tf.shape(self.attention_values)[1]  # int (문자 길이)
         self.batch_size = tf.shape(attention_values)[0]
         self.num_output_mixture_components = num_output_mixture_components
         self.output_units = 6 * self.num_output_mixture_components + 1

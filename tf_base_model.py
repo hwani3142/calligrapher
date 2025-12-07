@@ -9,7 +9,7 @@ import time
 import numpy as np
 import tensorflow as tf
 
-# TensorFlow 2.x compatibility
+# TensorFlow 2.x compatibility: v1 그래프 모드 사용
 tf.compat.v1.disable_eager_execution()
 
 from tf_utils import shape
@@ -23,33 +23,6 @@ class TFBaseModel(object):
     Code for the training loop, parameter updates, checkpointing, and inference are implemented here and
     subclasses are mainly responsible for building the computational graph beginning with the placeholders
     and ending with the loss tensor.
-
-    Args:
-        reader: Class with attributes train_batch_generator, val_batch_generator, and test_batch_generator
-            that yield dictionaries mapping tf.placeholder names (as strings) to batch data (numpy arrays).
-        batch_size: Minibatch size.
-        learning_rate: Learning rate.
-        optimizer: 'rms' for RMSProp, 'adam' for Adam, 'sgd' for SGD
-        grad_clip: Clip gradients elementwise to have norm at most equal to grad_clip.
-        regularization_constant:  Regularization constant applied to all trainable parameters.
-        keep_prob: 1 - p, where p is the dropout probability
-        early_stopping_steps:  Number of steps to continue training after validation loss has
-            stopped decreasing.
-        warm_start_init_step:  If nonzero, model will resume training a restored model beginning
-            at warm_start_init_step.
-        num_restarts:  After validation loss plateaus, the best checkpoint will be restored and the
-            learning rate will be halved.  This process will repeat num_restarts times.
-        enable_parameter_averaging:  If true, model saves exponential weighted averages of parameters
-            to separate checkpoint file.
-        min_steps_to_checkpoint:  Model only saves after min_steps_to_checkpoint training steps
-            have passed.
-        log_interval:  Train and validation accuracies are logged every log_interval training steps.
-        loss_averaging_window:  Train/validation losses are averaged over the last loss_averaging_window
-            training steps.
-        num_validation_batches:  Number of batches to be used in validation evaluation at each step.
-        log_dir: Directory where logs are written.
-        checkpoint_dir: Directory where checkpoints are saved.
-        prediction_dir: Directory where predictions/outputs are saved.
     """
 
     def __init__(
@@ -156,14 +129,17 @@ class TFBaseModel(object):
                     for placeholder_name, data in val_batch_df.items() if hasattr(self, placeholder_name)
                 }
 
-                val_feed_dict.update({self.learning_rate_var: self.learning_rate, self.beta1_decay_var: self.beta1_decay})
+                val_feed_dict.update({
+                    self.learning_rate_var: self.learning_rate,
+                    self.beta1_decay_var: self.beta1_decay
+                })
                 if hasattr(self, 'keep_prob'):
                     val_feed_dict.update({self.keep_prob: 1.0})
                 if hasattr(self, 'is_training'):
                     val_feed_dict.update({self.is_training: False})
 
                 results = self.session.run(
-                    fetches=[self.loss] + self.metrics.values(),
+                    fetches=[self.loss] + list(self.metrics.values()),
                     feed_dict=val_feed_dict
                 )
                 val_loss = results[0]
@@ -195,7 +171,10 @@ class TFBaseModel(object):
                     for placeholder_name, data in train_batch_df.items() if hasattr(self, placeholder_name)
                 }
 
-                train_feed_dict.update({self.learning_rate_var: self.learning_rate, self.beta1_decay_var: self.beta1_decay})
+                train_feed_dict.update({
+                    self.learning_rate_var: self.learning_rate,
+                    self.beta1_decay_var: self.beta1_decay
+                })
                 if hasattr(self, 'keep_prob'):
                     train_feed_dict.update({self.keep_prob: self.keep_prob_scalar})
                 if hasattr(self, 'is_training'):
@@ -276,7 +255,7 @@ class TFBaseModel(object):
             test_generator = self.reader.test_batch_generator(chunk_size)
             for i, test_batch_df in enumerate(test_generator):
                 if i % 10 == 0:
-                    print(i*len(test_batch_df))
+                    print(i * len(test_batch_df))
 
                 test_feed_dict = {
                     getattr(self, placeholder_name, None): data
@@ -324,7 +303,7 @@ class TFBaseModel(object):
         saver = self.saver_averaged if averaged else self.saver
         checkpoint_dir = self.checkpoint_dir_averaged if averaged else self.checkpoint_dir
         if not step:
-            model_path = tf.train.latest_checkpoint(checkpoint_dir)
+            model_path = tf.compat.v1.train.latest_checkpoint(checkpoint_dir)
             logging.info('restoring model parameters from {}'.format(model_path))
             saver.restore(self.session, model_path)
         else:
@@ -355,56 +334,69 @@ class TFBaseModel(object):
 
     def update_parameters(self, loss):
         if self.regularization_constant != 0:
-            l2_norm = tf.reduce_sum([tf.sqrt(tf.reduce_sum(tf.square(param))) for param in tf.trainable_variables()])
-            loss = loss + self.regularization_constant*l2_norm
+            l2_norm = tf.reduce_sum([
+                tf.sqrt(tf.reduce_sum(tf.square(param)))
+                for param in tf.compat.v1.trainable_variables()
+            ])
+            loss = loss + self.regularization_constant * l2_norm
 
         optimizer = self.get_optimizer(self.learning_rate_var, self.beta1_decay_var)
-        grads = optimizer.compute_gradients(loss)
-        clipped = [(tf.clip_by_value(g, -self.grad_clip, self.grad_clip), v_) for g, v_ in grads]
+        grads_and_vars = optimizer.compute_gradients(loss)
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        # None gradient 방어
+        clipped = []
+        for g, v_ in grads_and_vars:
+            if g is None:
+                continue
+            clipped.append(
+                (tf.clip_by_value(g, -self.grad_clip, self.grad_clip), v_)
+            )
+
+        update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             step = optimizer.apply_gradients(clipped, global_step=self.global_step)
 
         if self.enable_parameter_averaging:
-            maintain_averages_op = self.ema.apply(tf.trainable_variables())
+            maintain_averages_op = self.ema.apply(tf.compat.v1.trainable_variables())
             with tf.control_dependencies([step]):
                 self.step = tf.group(maintain_averages_op)
         else:
             self.step = step
 
         logging.info('all parameters:')
-        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.global_variables()]))
+        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.compat.v1.global_variables()]))
 
         logging.info('trainable parameters:')
-        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.trainable_variables()]))
+        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.compat.v1.trainable_variables()]))
 
         logging.info('trainable parameter count:')
-        logging.info(str(np.sum(np.prod(shape(var)) for var in tf.trainable_variables())))
+        logging.info(str(np.sum(np.prod(shape(var)) for var in tf.compat.v1.trainable_variables())))
 
     def get_optimizer(self, learning_rate, beta1_decay):
         if self.optimizer == 'adam':
-            return tf.train.AdamOptimizer(learning_rate, beta1=beta1_decay)
+            return tf.compat.v1.train.AdamOptimizer(learning_rate, beta1=beta1_decay)
         elif self.optimizer == 'gd':
-            return tf.train.GradientDescentOptimizer(learning_rate)
+            return tf.compat.v1.train.GradientDescentOptimizer(learning_rate)
         elif self.optimizer == 'rms':
-            return tf.train.RMSPropOptimizer(learning_rate, decay=beta1_decay, momentum=0.9)
+            return tf.compat.v1.train.RMSPropOptimizer(learning_rate, decay=beta1_decay, momentum=0.9)
         else:
             assert False, 'optimizer must be adam, gd, or rms'
 
     def build_graph(self):
         with tf.Graph().as_default() as graph:
-            self.ema = tf.train.ExponentialMovingAverage(decay=0.99)
-            self.global_step = tf.Variable(0, trainable=False)
-            self.learning_rate_var = tf.Variable(0.0, trainable=False)
-            self.beta1_decay_var = tf.Variable(0.0, trainable=False)
+            self.ema = tf.compat.v1.train.ExponentialMovingAverage(decay=0.99)
+            self.global_step = tf.compat.v1.Variable(0, trainable=False)
+            self.learning_rate_var = tf.compat.v1.Variable(0.0, trainable=False)
+            self.beta1_decay_var = tf.compat.v1.Variable(0.0, trainable=False)
 
             self.loss = self.calculate_loss()
             self.update_parameters(self.loss)
 
-            self.saver = tf.train.Saver(max_to_keep=1)
+            self.saver = tf.compat.v1.train.Saver(max_to_keep=1)
             if self.enable_parameter_averaging:
-                self.saver_averaged = tf.train.Saver(self.ema.variables_to_restore(), max_to_keep=1)
+                self.saver_averaged = tf.compat.v1.train.Saver(
+                    self.ema.variables_to_restore(), max_to_keep=1
+                )
 
-            self.init = tf.global_variables_initializer()
+            self.init = tf.compat.v1.global_variables_initializer()
             return graph

@@ -280,14 +280,16 @@ class LSTMAttentionCell(tf.keras.layers.Layer):
         return tf.concat([coords, tf.cast(sampled_e, tf.float32)], axis=1)  # [B, 3]
 
     def termination_condition(self, state: LSTMAttentionCellState):
-        # state.phi: [B, char_len]
-        char_idx = tf.cast(tf.argmax(state.phi, axis=1), tf.int32)  # [B]
+        char_idx = tf.cast(tf.argmax(state.phi, axis=1), tf.int32)
         final_char = char_idx >= self.attention_values_lengths - 1
         past_final_char = char_idx >= self.attention_values_lengths
 
-        output = self.output_function(state)
-        es = tf.cast(output[:, 2], tf.int32)
-        is_eos = tf.equal(es, np.ones_like(es))
+        output = self.output_function(state)          # [B, 3]
+        es = tf.cast(output[:, 2], tf.int32)         # [B]
+
+        # np.ones_like(es) 대신 tf.ones_like(es) 또는 그냥 상수 비교
+        # is_eos = tf.equal(es, tf.ones_like(es))
+        is_eos = tf.equal(es, tf.ones_like(es))       # 또는 tf.equal(es, 1)
 
         return tf.logical_or(tf.logical_and(final_char, is_eos), past_final_char)
 
